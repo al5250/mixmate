@@ -1,0 +1,17 @@
+munkres==1.1.4
+matplotlib==3.3.3
+numpy==1.19.3
+omegaconf==2.0.6
+pandas
+scikit-learn==0.24.1
+scipy
+tensorboard==2.4.1
+torchvision==0.8.2
+torch==1.7.1
+tqdm==4.56.2
+hydra-core==1.0.6
+pytorch-lightning==1.1.8
+pytorch-msssim==0.2.1
+spams
+progressbar2
+kymatio

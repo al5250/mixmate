@@ -1,0 +1,4 @@
+outputs/*
+data/*
+*.DS_Store
+*.pyc

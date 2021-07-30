@@ -1,0 +1,35 @@
+dataset:
+  # _target_: mixmate.datasets.USPS
+  # data_path: ${hydra:runtime.cwd}/data/
+  # download: True
+  # # classes_only: '0123456789'
+  # valid_size: 1000
+  # train_batch_size: 256
+  # valid_batch_size: 256
+  _target_: mixmate.datasets.TorchVisionDataset
+  name: MNIST
+  data_path: ${hydra:runtime.cwd}/data/
+  download: True
+  batch_size: 256
+  split: True
+mixmate:
+  num_layers: 15
+  input_size: 784
+  hidden_size: 50
+  step_size: 0.04
+  num_components: 10
+  beta: 0
+  lr: 1e-3
+  prox:
+    _target_: mixmate.ista.DoubleSidedBiasedReLU
+    sparse_penalty: 0.75
+trainer:
+  gpus: 1
+  max_epochs: 50
+  check_val_every_n_epoch: 1
+  limit_train_batches: 1.0
+  limit_val_batches: 1.0
+  num_sanity_val_steps: -1
+  log_every_n_steps: 1
+num_prelabeled: ~
+use_svd: False
