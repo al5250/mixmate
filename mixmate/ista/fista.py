@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, Optional
 
 import torch
 from torch import Tensor
@@ -12,7 +12,8 @@ def fista(
     A: Tensor,
     prox: ProximalOperator,
     num_iter: int,
-    step_size: float
+    step_size: float,
+    mask: Optional[Tensor] = None
 ) -> Tensor:
     """Run batched variant of the Fast Iterative Shrinkage-Thresholding Algorithm.
 
@@ -33,6 +34,9 @@ def fista(
         Number of iterations to run FISTA.
     step_size: float
         Step size of gradient descent within FISTA.
+    mask : Tensor, optional
+        The masks over the input of size (... x B x M) with batch 
+        dimension B and data dimension M.
 
     Returns
     -------
@@ -41,6 +45,9 @@ def fista(
         and code dimension N.
 
     """
+    if mask is not None:
+        assert torch.all(y[..., ~mask] == 0.0)
+
     y_size = y.size()
     batch_size, dim_data = y_size[-2:]
     dim_code = A.size(dim=-1)
@@ -54,7 +61,10 @@ def fista(
     x_tmp = torch.zeros_like(x_old)
 
     for t in range(num_iter):
-        grad = (x_tmp @ A_transpose - y) @ A
+        if mask is None:
+            grad = ((x_tmp @ A_transpose) - y) @ A
+        else:
+            grad = (mask * (x_tmp @ A_transpose) - y) @ A
         x_new = prox(x_tmp - grad * step_size, step_size)
         t_new = (1 + np.sqrt(1 + 4 * t_old * t_old)) / 2
         x_tmp = x_new + ((t_old - 1) / t_new) * (x_new - x_old)

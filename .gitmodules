@@ -1,6 +1,3 @@
-[submodule "crsae"]
-	path = crsae
-	url = https://github.com/btolooshams/crsae
 [submodule "subspace-clustering"]
 	path = subspace-clustering
 	url = https://github.com/ChongYou/subspace-clustering.git

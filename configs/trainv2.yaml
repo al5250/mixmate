@@ -11,7 +11,8 @@ dataset:
   data_path: ${hydra:runtime.cwd}/data/
   download: True
   batch_size: 256
-  split: True
+  erase_prob: 0.0
+  erase_frac: 0.0
 mixmate:
   num_layers: 15
   input_size: 784
@@ -23,6 +24,7 @@ mixmate:
   prox:
     _target_: mixmate.ista.DoubleSidedBiasedReLU
     sparse_penalty: 0.75
+  freeze_bias: True
 trainer:
   gpus: 1
   max_epochs: 50

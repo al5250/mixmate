@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Optional
 
 import math
 import torch
@@ -37,7 +37,8 @@ class MixMATEv2(pl.LightningModule):
         step_size: float,
         prox: ProximalOperator,
         beta: float = 1.,
-        lr: float = 1e-3
+        lr: float = 1e-3,
+        freeze_bias: bool = True
     ) -> None:
         super().__init__()
 
@@ -51,6 +52,7 @@ class MixMATEv2(pl.LightningModule):
 
         self.beta = beta
         self.lr = lr
+        self.freeze_bias = freeze_bias
 
         W = torch.randn((self.num_components, self.input_size, self.hidden_size))
         self.W = Parameter(F.normalize(W, dim=1))
@@ -61,10 +63,11 @@ class MixMATEv2(pl.LightningModule):
         self.valid_accuracy = pl.metrics.Accuracy()
 
         # Freeze params
-        self.attn.biases.requires_grad = False
+        if  self.freeze_bias:
+            self.attn.biases.requires_grad = False
 
-    def encode(self, data: Tensor) -> Tensor:
-        code = fista(data, self.W, self.prox, self.num_layers, self.step_size)
+    def encode(self, data: Tensor, mask: Optional[Tensor] = None) -> Tensor:
+        code = fista(data, self.W, self.prox, self.num_layers, self.step_size, mask)
         return code
 
     def decode(self, code: Tensor) -> Tensor:
@@ -76,14 +79,23 @@ class MixMATEv2(pl.LightningModule):
         # rescale each dictionary atom to have norm 1.
         self.W.div_(self.W.norm(dim=1, keepdim=True))
 
-    def forward(self, data: Tensor) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
+    def forward(
+        self, 
+        data: Tensor, 
+        mask: Optional[Tensor] = None
+    ) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
         img_shape = data.size()[-3:]
         data = data.flatten(start_dim=-3, end_dim=-1)
+        if mask is not None:
+            mask = mask.flatten(start_dim=-3, end_dim=-1)
 
-        codes = self.encode(data)
+        codes = self.encode(data, mask)
         recons = self.decode(codes)
 
-        recon_losses = ((recons - data) ** 2).sum(dim=-1)
+        if mask is None:
+            recon_losses = ((recons - data) ** 2).sum(dim=-1)
+        else:
+            recon_losses = (mask * (recons - data) ** 2).sum(dim=-1)
         # reg_losses = self.prox.sparse_penalty * torch.abs(codes).sum(dim=-1)
         reg_losses = self.prox.compute_reg_pen(codes)
         energies = recon_losses + reg_losses
@@ -134,7 +146,13 @@ class MixMATEv2(pl.LightningModule):
 
     def training_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int) -> Tensor:
         data, labels = batch
-        probs, recons, codes, energy, kl_div = self.forward(data)
+        mask = (data >= 0)
+        if torch.all(mask):
+            probs, recons, codes, energy, kl_div = self.forward(data)
+        else:
+            data[~mask] = 0.0
+            probs, recons, codes, energy, kl_div = self.forward(data, mask)
+        # probs, recons, codes, energy, kl_div = self.forward(data)
         # acc = self._compute_accuracy(probs, labels)
         global_loss, global_energy, global_kl_div = self._compute_global_losses(
             energy, kl_div
@@ -159,7 +177,7 @@ class MixMATEv2(pl.LightningModule):
         #     self.global_step
         # )
 
-        pred = torch.argmax(probs, dim=-1)
+        # pred = torch.argmax(probs, dim=-1)
         return global_loss
         # return {'loss': global_loss, 'pred': pred.cpu(), 'targ': labels.cpu()}
 
@@ -175,7 +193,23 @@ class MixMATEv2(pl.LightningModule):
         
     def validation_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int) -> Tensor:
         data, labels = batch
-        probs, recons, codes, energy, kl_div = self.forward(data)
+
+        mask = (data >= 0)
+        if torch.all(mask):
+            probs, recons, codes, energy, kl_div = self.forward(data)
+        else:
+            data[~mask] = 0.0
+            probs, recons, codes, energy, kl_div = self.forward(data, mask)
+
+        # if self.val_mask_frac < 1.0:
+        #     img_shape = data.size()[-3:]
+        #     rand = torch.rand_like(data).flatten(start_dim=-3, end_dim=-1)
+        #     quantiles = torch.quantile(rand, q=self.val_mask_frac, dim=-1, keepdim=True)
+        #     mask = (rand <= quantiles).unflatten(dim=-1, sizes=img_shape)
+        #     data[~mask] = 0.0
+        #     probs, recons, codes, energy, kl_div = self.forward(data, mask)
+        # else:
+        #     probs, recons, codes, energy, kl_div = self.forward(data)
         # acc = self._compute_accuracy(probs, labels)
         global_loss, global_energy, global_kl_div = self._compute_global_losses(
             energy, kl_div

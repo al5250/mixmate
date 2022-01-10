@@ -13,8 +13,8 @@ from sklearn.manifold import TSNE
 import numpy as np
 from scipy.special import softmax
 
-from ssc.cluster.selfrepresentation import SparseSubspaceClusteringOMP, ElasticNetSubspaceClustering
-from ssc.decomposition.dim_reduction import dim_reduction
+from ssc import SparseSubspaceClusteringOMP
+from ssc import dim_reduction
 from kymatio import Scattering2D
 from torchvision.transforms import Resize
 
@@ -30,7 +30,7 @@ def trainv2(config: DictConfig) -> None:
 
     num_prelabeled = config.num_prelabeled
     if num_prelabeled is not None:
-        imgs_lst, labs_lst = zip(*[batch for batch in dataset.valid_loader])
+        imgs_lst, labs_lst = zip(*[batch for batch in dataset.train_loader])
         imgs_all = torch.cat(imgs_lst, dim=0).numpy()
         true_labs = torch.cat(labs_lst, dim=0).numpy()
         for i in range(mixmate.num_components):
@@ -139,9 +139,14 @@ def trainv2(config: DictConfig) -> None:
         #     imgs_i = F.normalize(imgs_i - imgs_i.mean(dim=1, keepdim=True), dim=1)
         #     mixmate.W.data[i] = imgs_i.T
 
-        imgs_lst, labs_lst = zip(*[batch for batch in dataset.valid_loader])
+        imgs_lst, labs_lst = zip(*[batch for batch in dataset.train_loader])
         imgs = torch.cat(imgs_lst, dim=0).numpy()
         true_labs = torch.cat(labs_lst, dim=0).numpy()
+
+        # Only get clean images
+        mask = np.all(imgs.reshape(len(imgs), -1) >= 0.0, axis=-1)
+        imgs = imgs[mask]
+        true_labs = true_labs[mask]
 
         # s = StandardScaler(with_std=False)
         # imgs_scaled = s.fit_transform(imgs)
@@ -175,10 +180,23 @@ def trainv2(config: DictConfig) -> None:
         # clusterer = AgglomerativeClustering(n_clusters=10)
         # labels = clusterer.fit_predict(view)
 
-        # SSC
+        
         # subset_size = 4 * mixmate.num_components * mixmate.hidden_size
         subset_size = 2000
-        idx = np.random.choice(np.arange(len(dataset._dataset)), replace=False, size=(subset_size,))
+        idx = np.random.choice(np.arange(len(imgs_proc)), replace=False, size=(subset_size,))
+        
+        # K-Means
+        # clusterer = KMeans(n_clusters=mixmate.num_components)
+        # labels = clusterer.fit_predict(imgs[idx])
+
+        # Spectral clustering
+        # print("making graph...")
+        # graph = kneighbors_graph(imgs[idx], 1000)
+        # graph = (graph + graph.T) / 2
+        # print("running spectral clustering...")
+        # labels = spectral_clustering(graph, n_clusters=mixmate.num_components)
+        
+        # SSC
         scattering = Scattering2D(J=3, shape=(dim, dim))
         scattered = scattering(imgs_proc[idx])
         
@@ -192,10 +210,6 @@ def trainv2(config: DictConfig) -> None:
         scattered = dim_reduction(scattered, 500)  # dimension reduction by PCA
 
         model = SparseSubspaceClusteringOMP(n_clusters=10, affinity='symmetrize', n_nonzero=5, thr=1.0e-5)
-        # model = ElasticNetSubspaceClustering(
-        #     n_clusters=10, affinity='nearest_neighbors', algorithm='spams', active_support=True, 
-        #     gamma=200, tau=0.9
-        # )
 
         labels = model.fit_predict(scattered)
         print(np.bincount(labels))
