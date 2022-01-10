@@ -1,37 +1,30 @@
 dataset:
-  # _target_: mixmate.datasets.USPS
-  # data_path: ${hydra:runtime.cwd}/data/
-  # download: True
-  # # classes_only: '0123456789'
-  # valid_size: 1000
-  # train_batch_size: 256
-  # valid_batch_size: 256
   _target_: mixmate.datasets.TorchVisionDataset
-  name: MNIST
+  name: MNIST # Change this to 'FashionMNIST' or 'USPS' to try other datasets
   data_path: ${hydra:runtime.cwd}/data/
   download: True
   batch_size: 256
-  erase_prob: 0.0
-  erase_frac: 0.0
+  erase_prob: 0.0 # Set between (0, 1) to control prob that image has missing pixels
+  erase_frac: 0.0 # Set between (0, 1) to control percentage of missing pixels
 mixmate:
-  num_layers: 15
-  input_size: 784
-  hidden_size: 50
-  step_size: 0.04
-  num_components: 10
+  num_layers: 15 # Number of layers for FISTA unfolding
+  input_size: 784 # Size of image (784 for MNIST/Fashion, 256 for USPS)
+  hidden_size: 50 # Number of dictionary columns (50 for MNIST/Fashion, 30 for USPS)
+  step_size: 0.04 # FISTA step size
+  num_components: 10 # Number of clusters
   beta: 0
-  lr: 1e-3
+  lr: 1e-3 # Learning rate for backprop
   prox:
     _target_: mixmate.ista.DoubleSidedBiasedReLU
     sparse_penalty: 0.75
-  freeze_bias: True
+  freeze_bias: True # Set to False to train prior cluster probabilities
 trainer:
   gpus: 1
-  max_epochs: 50
+  max_epochs: 50 # Number of epochs/EM steps per data point
   check_val_every_n_epoch: 1
   limit_train_batches: 1.0
   limit_val_batches: 1.0
   num_sanity_val_steps: -1
   log_every_n_steps: 1
-num_prelabeled: ~
-use_svd: False
+init_subset_size: 2000 # Number of points to cluster for initialization
+init_alg: 'ssc' # Change this to 'kmeans' or 'spectral' to try other algorithms

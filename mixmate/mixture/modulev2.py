@@ -13,15 +13,13 @@ import numpy as np
 from sklearn.cluster import KMeans
 from sklearn.metrics.cluster import normalized_mutual_info_score, adjusted_rand_score
 
-from mixmate.encoders.ae import AutoEncoder
 from mixmate.mixture.attention import BiasedAttention
-from mixmate.ista import fista, DoubleSidedBiasedReLU
-from mixmate.ista import ProximalOperator
+from mixmate.ista import ProximalOperator, fista
 
 
 
 class MixMATEv2(pl.LightningModule):
-    """Second version of MixMATE with sparse auto-encoders.
+    """Second version of MixMATE with sparse, dictionary learning auto-encoders.
 
     Supports parallel computation of multiple auto-encoders, unlike the first
     version of MixMATE that performs them in sequence.
@@ -89,17 +87,17 @@ class MixMATEv2(pl.LightningModule):
         if mask is not None:
             mask = mask.flatten(start_dim=-3, end_dim=-1)
 
+        # Run parallel encoders and decoders (mask is for missing data)
         codes = self.encode(data, mask)
         recons = self.decode(codes)
 
+        # Compute energies and losses
         if mask is None:
             recon_losses = ((recons - data) ** 2).sum(dim=-1)
         else:
             recon_losses = (mask * (recons - data) ** 2).sum(dim=-1)
-        # reg_losses = self.prox.sparse_penalty * torch.abs(codes).sum(dim=-1)
         reg_losses = self.prox.compute_reg_pen(codes)
         energies = recon_losses + reg_losses
-        # energies = recon_losses
         energy, probs = self.attn(keys=-energies, values=energies, dim=0)
 
         probs = probs.transpose(0, 1)
@@ -152,8 +150,7 @@ class MixMATEv2(pl.LightningModule):
         else:
             data[~mask] = 0.0
             probs, recons, codes, energy, kl_div = self.forward(data, mask)
-        # probs, recons, codes, energy, kl_div = self.forward(data)
-        # acc = self._compute_accuracy(probs, labels)
+       
         global_loss, global_energy, global_kl_div = self._compute_global_losses(
             energy, kl_div
         )
@@ -168,28 +165,7 @@ class MixMATEv2(pl.LightningModule):
         self.log('Training/entropy', entropy, on_step=True, on_epoch=True)
         self.log('Training/sparsity', sparsity, on_step=True, on_epoch=True)
 
-        
-        # Log attention biases
-        # tensorboard = self.logger.experiment
-        # tensorboard.add_scalars(
-        #     'Training/attn_bias',
-        #     dict([(str(k), v) for k, v in enumerate(self.attn.biases)]),
-        #     self.global_step
-        # )
-
-        # pred = torch.argmax(probs, dim=-1)
         return global_loss
-        # return {'loss': global_loss, 'pred': pred.cpu(), 'targ': labels.cpu()}
-
-    # def training_epoch_end(self, training_step_outputs):
-    #     preds = torch.cat(
-    #         [out['pred'] for out in training_step_outputs], dim=0
-    #     )
-    #     targs = torch.cat(
-    #         [out['targ'] for out in training_step_outputs], dim=0
-    #     )
-    #     acc = self._compute_cluster_accuracy(preds.numpy(), targs.numpy(), targs.max().item() + 1)
-    #     self.log('Training/acc', acc, on_epoch=True)
         
     def validation_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int) -> Tensor:
         data, labels = batch
@@ -201,16 +177,6 @@ class MixMATEv2(pl.LightningModule):
             data[~mask] = 0.0
             probs, recons, codes, energy, kl_div = self.forward(data, mask)
 
-        # if self.val_mask_frac < 1.0:
-        #     img_shape = data.size()[-3:]
-        #     rand = torch.rand_like(data).flatten(start_dim=-3, end_dim=-1)
-        #     quantiles = torch.quantile(rand, q=self.val_mask_frac, dim=-1, keepdim=True)
-        #     mask = (rand <= quantiles).unflatten(dim=-1, sizes=img_shape)
-        #     data[~mask] = 0.0
-        #     probs, recons, codes, energy, kl_div = self.forward(data, mask)
-        # else:
-        #     probs, recons, codes, energy, kl_div = self.forward(data)
-        # acc = self._compute_accuracy(probs, labels)
         global_loss, global_energy, global_kl_div = self._compute_global_losses(
             energy, kl_div
         )
@@ -292,7 +258,6 @@ class SingleAutoencoder(MixMATEv2):
     def validation_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int) -> Tensor:
         data, labels = batch
         probs, recons, codes, energy, kl_div = self.forward(data)
-        # acc = self._compute_accuracy(probs, labels)
         global_loss, global_energy, global_kl_div = self._compute_global_losses(
             energy, kl_div
         )
@@ -350,45 +315,3 @@ class SingleAutoencoder(MixMATEv2):
             on_step=False, 
             on_epoch=True
         )
-    
-    # def training_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int) -> Tensor:
-    #     data, labels = batch
-    #     probs, recons, codes, energy, kl_div = self.forward(data)
-    #     # acc = self._compute_accuracy(probs, labels)
-    #     global_loss, global_energy, global_kl_div = self._compute_global_losses(
-    #         energy, kl_div
-    #     )
-    #     entropy = self._compute_entropy(probs)
-    #     sparsity = self._compute_expected_sparsity(probs, codes)
-
-    #     # Log train metrics
-    #     self.log('Training/loss', global_loss, on_step=True, on_epoch=True)
-    #     self.log('Training/energy', global_energy, on_step=True, on_epoch=True)
-    #     self.log('Training/kl', global_kl_div, on_step=True, on_epoch=True)
-    #     # self.log('Training/acc', acc, on_step=True, on_epoch=True)
-    #     self.log('Training/entropy', entropy, on_step=True, on_epoch=True)
-    #     self.log('Training/sparsity', sparsity, on_step=True, on_epoch=True)
-
-
-    #     pred = torch.argmax(probs, dim=-1)
-    #     return {'loss': global_loss, 'codes': codes.detach().cpu(), 'targ': labels.cpu()}
-    
-    # def training_epoch_end(self, training_step_outputs):
-    #     codes = torch.cat(
-    #         [out['codes'][:, 0, :] for out in training_step_outputs], dim=0
-    #     )
-    #     targs = torch.cat(
-    #         [out['targ'] for out in training_step_outputs], dim=0
-    #     )
-
-    #     codes = codes.numpy()
-    #     targs = targs.numpy()
-
-    #     kmeans = KMeans(n_clusters=10)
-    #     labels = kmeans.fit_predict(codes)
-    #     self.log(
-    #         'Training/Kmeans_Acc', 
-    #         self._compute_cluster_accuracy(labels, targs, 10), 
-    #         on_step=False, 
-    #         on_epoch=True
-    #     )
