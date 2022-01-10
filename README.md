@@ -39,5 +39,6 @@ Our internal code is comprised of three main directories:
 - `mixmate/datasets`: This contains the implementation for pulling the datasets from PyTorch.
 - `mixmate/ista`: This contains the implementation of the fast iterative shrinkage-thresholding algorithm (FISTA), optimized for parallel computation with several different dictionaries.
 - `mixmate/mixture`: This contains the implementation of our model in the `modulev2.py` file.
+
 Additionally, the `ssc.py` file contains code for running SSC initialization for our method.
 
