@@ -45,7 +45,7 @@ Additionally, the `ssc.py` file contains code for running SSC initialization for
 ## Citation
 If this repository is useful for your work, please consider citing our paper:
 ```
-@inproceedings{lin2021mixture,
+@inproceedings{lin2022mixture,
   title={Mixture Model Auto-Encoders: Deep Clustering through Dictionary Learning},
   author={Lin, Alexander and Song, Andrew H and Ba, Demba},
   journal={IEEE International Conference on Acoustics, Speech, and Signal Processing},
